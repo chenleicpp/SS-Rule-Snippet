@@ -1,166 +1,15 @@
-/*
-    本作品用于QuantumultX和Surge之间js执行方法的转换
-    您只需书写其中任一软件的js,然后在您的js最【前面】追加上此段js即可
-    无需担心影响执行问题,具体原理是将QX和Surge的方法转换为互相可调用的方法
-    尚未测试是否支持import的方式进行使用,因此暂未export
-    如有问题或您有更好的改进方案,请前往 https://github.com/sazs34/TaskConfig/issues 提交内容,或直接进行pull request
-    您也可直接在tg中联系@wechatu
-*/
-// #region 固定头部
-let isQuantumultX = $task != undefined; //判断当前运行环境是否是qx
-let isSurge = $httpClient != undefined; //判断当前运行环境是否是surge
-// 判断request还是respons
-// down方法重写
-var $done = (obj={}) => {
-    var isRequest = typeof $request != "undefined";
-    if (isQuantumultX) {
-        return isRequest ? $done({}) : ""
-    }
-    if (isSurge) {
-        return isRequest ? $done({}) : $done()
-    }
-}
-// http请求
-var $task = isQuantumultX ? $task : {};
-var $httpClient = isSurge ? $httpClient : {};
-// cookie读写
-var $prefs = isQuantumultX ? $prefs : {};
-var $persistentStore = isSurge ? $persistentStore : {};
-// 消息通知
-var $notify = isQuantumultX ? $notify : {};
-var $notification = isSurge ? $notification : {};
-// #endregion 固定头部
-
-// #region 网络请求专用转换
-if (isQuantumultX) {
-    var errorInfo = {
-        error: ''
-    };
-    $httpClient = {
-        get: (url, cb) => {
-            var urlObj;
-            if (typeof (url) == 'string') {
-                urlObj = {
-                    url: url
-                }
-            } else {
-                urlObj = url;
-            }
-            $task.fetch(urlObj).then(response => {
-                cb(undefined, response, response.body)
-            }, reason => {
-                errorInfo.error = reason.error;
-                cb(errorInfo, response, '')
-            })
-        },
-        post: (url, cb) => {
-            var urlObj;
-            if (typeof (url) == 'string') {
-                urlObj = {
-                    url: url
-                }
-            } else {
-                urlObj = url;
-            }
-            url.method = 'POST';
-            $task.fetch(urlObj).then(response => {
-                cb(undefined, response, response.body)
-            }, reason => {
-                errorInfo.error = reason.error;
-                cb(errorInfo, response, '')
-            })
-        }
-    }
-}
-if (isSurge) {
-    $task = {
-        fetch: url => {
-            //为了兼容qx中fetch的写法,所以永不reject
-            return new Promise((resolve, reject) => {
-                if (url.method == 'POST') {
-                    $httpClient.post(url, (error, response, data) => {
-                        if (response) {
-                            response.body = data;
-                            resolve(response, {
-                                error: error
-                            });
-                        } else {
-                            resolve(null, {
-                                error: error
-                            })
-                        }
-                    })
-                } else {
-                    $httpClient.get(url, (error, response, data) => {
-                        if (response) {
-                            response.body = data;
-                            resolve(response, {
-                                error: error
-                            });
-                        } else {
-                            resolve(null, {
-                                error: error
-                            })
-                        }
-                    })
-                }
-            })
-
-        }
-    }
-}
-// #endregion 网络请求专用转换
-
-// #region cookie操作
-if (isQuantumultX) {
-    $persistentStore = {
-        read: key => {
-            return $prefs.valueForKey(key);
-        },
-        write: (val, key) => {
-            return $prefs.setValueForKey(val, key);
-        }
-    }
-}
-if (isSurge) {
-    $prefs = {
-        valueForKey: key => {
-            return $persistentStore.read(key);
-        },
-        setValueForKey: (val, key) => {
-            return $persistentStore.write(val, key);
-        }
-    }
-}
-// #endregion
-
-// #region 消息通知
-if (isQuantumultX) {
-    $notification = {
-        post: (title, subTitle, detail) => {
-            $notify(title, subTitle, detail);
-        }
-    }
-}
-if (isSurge) {
-    $notify = function (title, subTitle, detail) {
-        $notification.post(title, subTitle, detail);
-    }
-}
-// #endregion
-
 // Developed by Hackl0us (https://github.com/hackl0us)
+// Adopted to Quantumult X Rewrite Script by laosb (https://lao.sb/gh)
 
 // STEP 1: 前往 https://aqicn.org/data-platform/token/ 注册账户，将申请的 API Token 填入下方
 const aqicnToken = '5ca5244e90b5235b694ba68db2c611509725ab05'
 
-// STEP 2: 参考下方配置片段，在代理工具的配置文件中添加对应的配置。注意：script-path 后应该替换为添加 apicnToken 值后的脚本路径
+// STEP 2: 参考下方配置片段，在代理工具的配置文件中添加对应的配置。注意：script-response-body 后应该替换为添加 apicnToken 值后的脚本路径
 /*
-	[Script]
-	AQI-US = type=http-response, pattern=https://weather-data.apple.com/v1/weather/[\w-]+/[0-9]+\.[0-9]+/[0-9]+\.[0-9]+\?include=, requires-body=true, script-path=/path/to/iOS_Weather_AQI_Standard.js
-
-	[MITM]
-	hostname = weather-data.apple.com
+[rewrite_local]
+https://weather-data.apple.com/v1/weather/[\w-_]+/[0-9]+\.[0-9]+/[0-9]+\.[0-9]+\?include= url script-response-body aqicn.js
+[mitm]
+hostname = weather-data.apple.com
 */
 
 const AirQualityStandard = {
@@ -184,7 +33,7 @@ function classifyAirQualityLevel(aqiIndex) {
 	if (aqiIndex >= 0 && aqiIndex <= 50) {
 		return AirQualityLevel.GOOD;
 	} else if (aqiIndex >= 51 && aqiIndex <= 100) {
-		return AirQualityLevel.MODERATE;
+		return AirQualityLevel.MODERATEi;
 	} else if (aqiIndex >= 101 && aqiIndex <= 150) {
 		return AirQualityLevel.UNHEALTHY_FOR_SENSITIVE;
 	} else if (aqiIndex >= 151 && aqiIndex <= 200) {
@@ -215,11 +64,10 @@ function modifyWeatherResp(weatherRespBody, aqicnRespBody) {
 	return JSON.stringify(weatherRespJson)
 }
 
-$httpClient.get(`https://api.waqi.info/feed/geo:${lat};${lng}/?token=${aqicnToken}`, function (error, _response, data) {
-	if (error) {
-		$done({})
-	} else {
-		let body = modifyWeatherResp($response.body, data)
-		$done({ body })
-	}
-});
+$task.fetch({
+  url: `https://api.waqi.info/feed/geo:${lat};${lng}/?token=${aqicnToken}`,
+  headers: $request.headers
+}).then((response) => {
+  let body = modifyWeatherResp($response.body, response.body)
+  $done({ body })
+}, () => $done());
